@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 show_menu() {
     clear
     echo -e "${BOLD}${MAGENTA}"
-    cat << "EOF"
+    cat << "MENU_EOF"
     ╔═══════════════════════════════════════════════════════════════════════╗
     ║                                                                       ║
     ║    ██████╗ ███████╗███╗   ██╗ ██████╗██╗  ██╗███╗   ███╗ █████╗       ║
@@ -34,12 +34,12 @@ show_menu() {
     ║                     Professional Benchmark Suite                      ║
     ║                              v2.0                                     ║
     ╚═══════════════════════════════════════════════════════════════════════╝
-EOF
+MENU_EOF
     echo -e "${NC}\n"
     
     # Afficher les derniers résultats si disponibles
-    if [ -d "$HOME/benchmark_results" ]; then
-        local latest=$(ls -t "$HOME/benchmark_results"/benchmark_*.txt 2>/dev/null | head -1)
+    if [ -d "$SCRIPT_DIR/results" ]; then
+        local latest=$(ls -t "$SCRIPT_DIR/results"/benchmark_*.txt 2>/dev/null | head -1)
         if [ -n "$latest" ]; then
             local score=$(grep "SCORE FINAL:" "$latest" | awk '{print $3}' | cut -d'/' -f1)
             local date=$(basename "$latest" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ - /')
@@ -87,12 +87,12 @@ show_results() {
     echo -e "${CYAN}${BOLD}║${NC}                   ${WHITE}${BOLD}HISTORIQUE DES BENCHMARKS${NC}                  ${CYAN}${BOLD}║${NC}"
     echo -e "${CYAN}${BOLD}╚═══════════════════════════════════════════════════════════════════╝${NC}\n"
     
-    if [ ! -d "$HOME/benchmark_results" ]; then
+    if [ ! -d "$SCRIPT_DIR/results" ]; then
         echo -e "${YELLOW}Aucun résultat trouvé${NC}\n"
         return
     fi
     
-    local files=($(ls -t "$HOME/benchmark_results"/benchmark_*.txt 2>/dev/null))
+    local files=($(ls -t "$SCRIPT_DIR/results"/benchmark_*.txt 2>/dev/null))
     
     if [ ${#files[@]} -eq 0 ]; then
         echo -e "${YELLOW}Aucun benchmark effectué${NC}\n"
@@ -126,10 +126,10 @@ show_results() {
             echo -e "   Score: ${color}${BOLD}${score}${NC}/100"
             
             # Mini détails
-            local cpu=$(grep "CPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
-            local ram=$(grep "RAM:" "$file" | grep -oP '\d+\.\d+' | head -1)
-            local disk=$(grep "Disque:" "$file" | grep -oP '\d+\.\d+' | head -1)
-            local gpu=$(grep "GPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
+            local cpu=$(grep "^CPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
+            local ram=$(grep "^RAM:" "$file" | grep -oP '\d+\.\d+' | head -1)
+            local disk=$(grep "^Disque:" "$file" | grep -oP '\d+\.\d+' | head -1)
+            local gpu=$(grep "^GPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
             
             echo -e "   ${DIM}CPU: ${cpu} │ RAM: ${ram} │ Disque: ${disk} │ GPU: ${gpu}${NC}"
             echo ""
@@ -187,28 +187,28 @@ main() {
         case $choice in
             1)
                 echo ""
-                if [ -f "$SCRIPT_DIR/system_benchmark_v2.sh" ]; then
-                    "$SCRIPT_DIR/system_benchmark_v2.sh"
+                if [ -f "$SCRIPT_DIR/system_benchmark_v2_corrected.sh" ]; then
+                    "$SCRIPT_DIR/system_benchmark_v2_corrected.sh"
                 else
-                    echo -e "${RED}Erreur: system_benchmark_v2.sh introuvable${NC}"
+                    echo -e "${RED}Erreur: system_benchmark_v2_corrected.sh introuvable${NC}"
                 fi
                 pause
                 ;;
             2)
                 echo ""
-                if [ -f "$SCRIPT_DIR/compare_benchmarks_v2.sh" ]; then
-                    "$SCRIPT_DIR/compare_benchmarks_v2.sh"
+                if [ -f "$SCRIPT_DIR/compare_benchmarks_v2_corrected.sh" ]; then
+                    "$SCRIPT_DIR/compare_benchmarks_v2_corrected.sh"
                 else
-                    echo -e "${RED}Erreur: compare_benchmarks_v2.sh introuvable${NC}"
+                    echo -e "${RED}Erreur: compare_benchmarks_v2_corrected.sh introuvable${NC}"
                 fi
                 pause
                 ;;
             3)
                 echo ""
-                if [ -f "$SCRIPT_DIR/generate_html_report.sh" ]; then
-                    "$SCRIPT_DIR/generate_html_report.sh"
+                if [ -f "$SCRIPT_DIR/generate_html_report_v2_corrected.sh" ]; then
+                    "$SCRIPT_DIR/generate_html_report_v2_corrected.sh"
                 else
-                    echo -e "${RED}Erreur: generate_html_report.sh introuvable${NC}"
+                    echo -e "${RED}Erreur: generate_html_report_v2_corrected.sh introuvable${NC}"
                 fi
                 pause
                 ;;
@@ -224,7 +224,7 @@ main() {
                 clear
                 echo -e "\n${CYAN}${BOLD}👋 Merci d'avoir utilisé BenchmarkPro !${NC}\n"
                 echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-                echo -e "${GREEN}Résultats sauvegardés dans:${NC} ${WHITE}~/benchmark_results/${NC}"
+                echo -e "${GREEN}Résultats sauvegardés dans:${NC} ${WHITE}$SCRIPT_DIR/results/${NC}"
                 echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
                 exit 0
                 ;;

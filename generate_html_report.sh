@@ -1,9 +1,11 @@
 #!/bin/bash
 
-# Générateur de rapport HTML pour les résultats de benchmark
+# Générateur de rapport HTML pour les résultats de benchmark - Version Corrigée
 
-RESULTS_DIR="$HOME/benchmark_results"
-OUTPUT_DIR="$HOME/benchmark_reports"
+# Obtenir le dossier du script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS_DIR="$SCRIPT_DIR/results"
+OUTPUT_DIR="$SCRIPT_DIR/reports"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_FILE="$OUTPUT_DIR/report_${TIMESTAMP}.html"
 
@@ -11,6 +13,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # Couleurs
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
@@ -22,7 +25,7 @@ echo -e "${BOLD}${CYAN}╚══════════════════
 
 # Vérifier les résultats disponibles
 if [ ! -d "$RESULTS_DIR" ]; then
-    echo -e "${YELLOW}Aucun résultat trouvé${NC}"
+    echo -e "${YELLOW}Aucun résultat trouvé dans $RESULTS_DIR${NC}"
     exit 1
 fi
 
@@ -38,40 +41,129 @@ echo -e "${BLUE}Sélection du fichier à convertir :${NC}\n"
 
 for i in "${!files[@]}"; do
     filename=$(basename "${files[$i]}")
-    date=$(echo "$filename" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ /')
+    date=$(echo "$filename" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ - /')
     printf "%2d. %s\n" $((i+1)) "$date"
 done
 
 echo ""
-echo -n "Choisissez un fichier (1-${#files[@]}) ou 0 pour tous: "
+echo -n "Choisissez un fichier (1-${#files[@]}): "
 read choice
 
-if [ "$choice" = "0" ]; then
-    # Générer un rapport pour tous les fichiers
-    selected_files=("${files[@]}")
-else
-    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
-        echo -e "${YELLOW}Choix invalide${NC}"
-        exit 1
-    fi
-    selected_files=("${files[$((choice-1))]}")
+if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#files[@]}" ]; then
+    echo -e "${YELLOW}Choix invalide${NC}"
+    exit 1
 fi
 
-# Fonction pour extraire les données
-extract_data() {
+selected_file="${files[$((choice-1))]}"
+
+# Fonction pour extraire les scores avec patterns robustes
+extract_score() {
     local file=$1
     local component=$2
-    grep "$component:" "$file" | grep -oP '\d+\.\d+' | head -1
+    
+    case $component in
+        "CPU")
+            grep "^CPU:" "$file" | grep -oP '\d+\.\d+' | head -1
+            ;;
+        "RAM")
+            grep "^RAM:" "$file" | grep -oP '\d+\.\d+' | head -1
+            ;;
+        "Disque")
+            grep "^Disque:" "$file" | grep -oP '\d+\.\d+' | head -1
+            ;;
+        "GPU")
+            grep "^GPU:" "$file" | grep -oP '\d+\.\d+' | head -1
+            ;;
+        "FINAL")
+            grep "^SCORE FINAL:" "$file" | grep -oP '\d+\.\d+' | head -1
+            ;;
+    esac
 }
 
+# Extraire les infos système
+extract_sys_info() {
+    local file=$1
+    local field=$2
+    
+    case $field in
+        "CPU_MODEL")
+            grep "^CPU:" "$file" | head -1 | sed 's/CPU: //' | sed 's/ (.*//g'
+            ;;
+        "RAM_TOTAL")
+            grep "^RAM:" "$file" | head -1 | sed 's/RAM: //'
+            ;;
+        "GPU_INFO")
+            grep "^GPU:" "$file" | head -1 | sed 's/GPU: //'
+            ;;
+    esac
+}
+
+echo ""
+echo -e "${CYAN}Extraction des données...${NC}"
+
+# Extraire les données
+filename=$(basename "$selected_file")
+bench_date=$(echo "$filename" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ - /')
+
+cpu_score=$(extract_score "$selected_file" "CPU")
+ram_score=$(extract_score "$selected_file" "RAM")
+disk_score=$(extract_score "$selected_file" "Disque")
+gpu_score=$(extract_score "$selected_file" "GPU")
+final_score=$(extract_score "$selected_file" "FINAL")
+
+# Valeurs par défaut si extraction échoue
+cpu_score=${cpu_score:-0}
+ram_score=${ram_score:-0}
+disk_score=${disk_score:-0}
+gpu_score=${gpu_score:-0}
+final_score=${final_score:-0}
+
+echo "CPU: $cpu_score"
+echo "RAM: $ram_score"
+echo "Disque: $disk_score"
+echo "GPU: $gpu_score"
+echo "Final: $final_score"
+echo ""
+
+# Extraire les infos système
+cpu_model=$(extract_sys_info "$selected_file" "CPU_MODEL")
+ram_total=$(extract_sys_info "$selected_file" "RAM_TOTAL")
+gpu_info=$(extract_sys_info "$selected_file" "GPU_INFO")
+
+cpu_model=${cpu_model:-"Non détecté"}
+ram_total=${ram_total:-"Non détecté"}
+gpu_info=${gpu_info:-"Non détecté"}
+
+# Déterminer la catégorie
+int_score=${final_score%.*}
+if [ -z "$int_score" ]; then int_score=0; fi
+
+if [ $int_score -ge 80 ]; then
+    category="excellent"
+    category_text="🏆 EXCELLENT"
+elif [ $int_score -ge 60 ]; then
+    category="good"
+    category_text="✨ BON"
+elif [ $int_score -ge 40 ]; then
+    category="average"
+    category_text="👍 MOYEN"
+else
+    category="low"
+    category_text="⚠️ FAIBLE"
+fi
+
 # Générer le HTML
-cat > "$OUTPUT_FILE" << 'EOF'
+cat > "$OUTPUT_FILE" << 'HTML_START'
 <!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rapport de Benchmark - Linux System</title>
+HTML_START
+
+echo "    <title>Rapport de Benchmark - $bench_date</title>" >> "$OUTPUT_FILE"
+
+cat >> "$OUTPUT_FILE" << 'HTML_STYLE'
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
@@ -208,6 +300,7 @@ cat > "$OUTPUT_FILE" << 'EOF'
             background: white;
             padding: 20px;
             border-radius: 15px;
+            max-height: 400px;
         }
         
         .category-badge {
@@ -262,42 +355,10 @@ cat > "$OUTPUT_FILE" << 'EOF'
         </header>
         
         <div class="content">
-EOF
+HTML_STYLE
 
-# Pour chaque fichier sélectionné
-for file in "${selected_files[@]}"; do
-    filename=$(basename "$file")
-    bench_date=$(echo "$filename" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ /')
-    
-    # Extraire les données
-    cpu_score=$(extract_data "$file" "CPU")
-    ram_score=$(extract_data "$file" "RAM")
-    disk_score=$(extract_data "$file" "Disque")
-    gpu_score=$(extract_data "$file" "GPU")
-    final_score=$(extract_data "$file" "SCORE FINAL")
-    
-    # Extraire les infos système
-    cpu_model=$(grep "CPU:" "$file" | head -1 | cut -d':' -f2 | xargs)
-    ram_total=$(grep "RAM:" "$file" | cut -d':' -f2 | xargs)
-    gpu_info=$(grep "GPU:" "$file" | cut -d':' -f2 | xargs)
-    
-    # Déterminer la catégorie
-    if (( $(echo "$final_score >= 80" | bc -l) )); then
-        category="excellent"
-        category_text="🏆 EXCELLENT"
-    elif (( $(echo "$final_score >= 60" | bc -l) )); then
-        category="good"
-        category_text="✨ BON"
-    elif (( $(echo "$final_score >= 40" | bc -l) )); then
-        category="average"
-        category_text="👍 MOYEN"
-    else
-        category="low"
-        category_text="⚠️ FAIBLE"
-    fi
-    
-    # Ajouter au HTML
-    cat >> "$OUTPUT_FILE" << BENCHMARK_HTML
+# Ajouter le contenu du benchmark
+cat >> "$OUTPUT_FILE" << HTML_CONTENT
             <div class="benchmark-card">
                 <h2>📊 Benchmark du $bench_date</h2>
                 
@@ -319,56 +380,58 @@ for file in "${selected_files[@]}"; do
                 <div class="score-overview">
                     <div class="score-item">
                         <h3>🖥️ CPU</h3>
-                        <div class="score-value">${cpu_score}</div>
+                        <div class="score-value">$cpu_score</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>💾 RAM</h3>
-                        <div class="score-value">${ram_score}</div>
+                        <div class="score-value">$ram_score</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>💿 Disque</h3>
-                        <div class="score-value">${disk_score}</div>
+                        <div class="score-value">$disk_score</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>🎮 GPU</h3>
-                        <div class="score-value">${gpu_score}</div>
+                        <div class="score-value">$gpu_score</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item final-score">
                         <h3>Score Final</h3>
-                        <div class="score-value">${final_score}</div>
+                        <div class="score-value">$final_score</div>
                         <div class="score-label">/100</div>
-                        <div class="category-badge ${category}">${category_text}</div>
+                        <div class="category-badge $category">$category_text</div>
                     </div>
                 </div>
                 
                 <div class="chart-container">
-                    <canvas id="chart_${bench_date//:/_}"></canvas>
+                    <canvas id="radarChart"></canvas>
                 </div>
                 
                 <script>
-                    const ctx_${bench_date//:/_} = document.getElementById('chart_${bench_date//:/_}').getContext('2d');
-                    new Chart(ctx_${bench_date//:/_}, {
+                    const ctx = document.getElementById('radarChart').getContext('2d');
+                    new Chart(ctx, {
                         type: 'radar',
                         data: {
                             labels: ['CPU', 'RAM', 'Disque', 'GPU'],
                             datasets: [{
                                 label: 'Scores',
-                                data: [${cpu_score}, ${ram_score}, ${disk_score}, ${gpu_score}],
+                                data: [$cpu_score, $ram_score, $disk_score, $gpu_score],
                                 fill: true,
                                 backgroundColor: 'rgba(102, 126, 234, 0.2)',
                                 borderColor: 'rgb(102, 126, 234)',
                                 pointBackgroundColor: 'rgb(102, 126, 234)',
                                 pointBorderColor: '#fff',
                                 pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgb(102, 126, 234)'
+                                pointHoverBorderColor: 'rgb(102, 126, 234)',
+                                pointRadius: 5,
+                                pointHoverRadius: 7
                             }]
                         },
                         options: {
@@ -383,28 +446,40 @@ for file in "${selected_files[@]}"; do
                                         display: true
                                     },
                                     suggestedMin: 0,
-                                    suggestedMax: 100
+                                    suggestedMax: 100,
+                                    ticks: {
+                                        stepSize: 20
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
                                 }
                             }
                         }
                     });
                 </script>
             </div>
-BENCHMARK_HTML
-done
+HTML_CONTENT
 
 # Fermer le HTML
-cat >> "$OUTPUT_FILE" << 'EOF'
+cat >> "$OUTPUT_FILE" << 'HTML_END'
         </div>
         
         <footer>
-            <p><strong>System Benchmark Tool v1.0</strong></p>
-            <p class="timestamp">Rapport généré le $(date '+%d/%m/%Y à %H:%M:%S')</p>
+            <p><strong>System Benchmark Tool v2.0</strong></p>
+            <p class="timestamp">Rapport généré le
+HTML_END
+
+echo " $(date '+%d/%m/%Y à %H:%M:%S')</p>" >> "$OUTPUT_FILE"
+
+cat >> "$OUTPUT_FILE" << 'HTML_FINAL'
         </footer>
     </div>
 </body>
 </html>
-EOF
+HTML_FINAL
 
 echo ""
 echo -e "${GREEN}✓ Rapport HTML généré avec succès !${NC}"

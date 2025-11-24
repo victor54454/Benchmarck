@@ -39,7 +39,9 @@ DISK_SCORE=0
 GPU_SCORE=0
 FINAL_SCORE=0
 
-RESULTS_DIR="$HOME/benchmark_results"
+# Obtenir le dossier du script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS_DIR="$SCRIPT_DIR/results"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="$RESULTS_DIR/benchmark_${TIMESTAMP}.txt"
 
@@ -49,35 +51,16 @@ mkdir -p "$RESULTS_DIR"
 # FONCTIONS D'AFFICHAGE AMÉLIORÉES
 # ============================================
 
-# Fonction pour effacer la ligne courante
 clear_line() {
     echo -ne "\033[2K\r"
 }
 
-# Animation de chargement
-spinner() {
-    local pid=$1
-    local message=$2
-    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    local temp
-    
-    while kill -0 $pid 2>/dev/null; do
-        temp=${spinstr#?}
-        printf "\r${CYAN}${BOLD}%s${NC} %s " "${spinstr:0:1}" "$message"
-        spinstr=$temp${spinstr:0:1}
-        sleep 0.1
-    done
-    clear_line
-}
-
-# Barre de progression moderne
 progress_bar() {
     local progress=$1
     local total=50
     local filled=$((progress * total / 100))
     local empty=$((total - filled))
     
-    # Couleur gradient selon progression
     local color=$RED
     if [ $progress -gt 33 ]; then color=$YELLOW; fi
     if [ $progress -gt 66 ]; then color=$GREEN; fi
@@ -88,7 +71,6 @@ progress_bar() {
     printf "]${NC} ${WHITE}${BOLD}%3d%%${NC}" $progress
 }
 
-# Titre avec animation
 animated_title() {
     clear
     echo -e "${BOLD}${MAGENTA}"
@@ -103,13 +85,12 @@ animated_title() {
     ║   ██████╔╝███████╗██║ ╚████║╚██████╗██║  ██║██║ ╚═╝ ██║██║  ██║██║  ██║  ║
     ║   ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ║
     ║                                                                       ║
-    ║              ${WHITE}Professional System Performance Analysis${MAGENTA}              ║
-    ║                           ${DIM}version 2.0${MAGENTA}                            ║
+    ║              Professional System Performance Analysis                 ║
+    ║                           version 2.0                                 ║
     ╚═══════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
     
-    # Animation de démarrage
     echo -e "\n${CYAN}${BOLD}${GEAR} Initialisation du système de benchmark...${NC}\n"
     for i in {1..3}; do
         progress_bar $((i * 33))
@@ -120,7 +101,6 @@ EOF
     sleep 0.5
 }
 
-# En-tête de section avec style
 section_header() {
     local title=$1
     local icon=$2
@@ -131,27 +111,22 @@ section_header() {
     echo ""
 }
 
-# Message d'info stylé
 print_info() {
     echo -e "${BLUE}${BOLD}[${ARROW}]${NC} ${WHITE}$1${NC}"
 }
 
-# Message de succès avec animation
 print_success() {
     echo -e "${GREEN}${BOLD}[${CHECK}]${NC} ${GREEN}$1${NC}"
 }
 
-# Message d'avertissement
 print_warning() {
     echo -e "${YELLOW}${BOLD}[!]${NC} ${YELLOW}$1${NC}"
 }
 
-# Message d'erreur
 print_error() {
     echo -e "${RED}${BOLD}[${CROSS}]${NC} ${RED}$1${NC}"
 }
 
-# Affichage d'un score avec animation
 display_score() {
     local label=$1
     local score=$2
@@ -165,7 +140,6 @@ display_score() {
     
     echo -e "${icon} ${WHITE}${BOLD}${label}:${NC} ${color}${BOLD}${score}${NC}/${max}"
     
-    # Mini barre de progression
     local bar_length=30
     local filled=$((percentage * bar_length / 100))
     local empty=$((bar_length - filled))
@@ -176,29 +150,19 @@ display_score() {
     printf "]${NC} ${DIM}%d%%${NC}\n\n" $percentage
 }
 
-# ============================================
-# VÉRIFICATION DES DÉPENDANCES
-# ============================================
-
 check_dependencies() {
     section_header "Vérification des Dépendances" "🔍"
     
     local deps=("sysbench" "fio" "glxinfo" "bc" "jq")
     local missing=()
-    local checked=0
-    local total=${#deps[@]}
     
     for dep in "${deps[@]}"; do
-        checked=$((checked + 1))
-        local progress=$((checked * 100 / total))
-        
         if command -v $dep &> /dev/null; then
             printf "${GREEN}${CHECK}${NC} %-15s ${DIM}[installé]${NC}\n" "$dep"
         else
             printf "${RED}${CROSS}${NC} %-15s ${DIM}[manquant]${NC}\n" "$dep"
             missing+=($dep)
         fi
-        
         sleep 0.1
     done
     
@@ -219,22 +183,16 @@ check_dependencies() {
     sleep 1
 }
 
-# ============================================
-# INFORMATIONS SYSTÈME
-# ============================================
-
 get_system_info() {
     section_header "Informations Système" "💻"
     
     echo "=== SYSTEM INFO ===" >> "$RESULTS_FILE"
     
-    # Récupération des infos
     CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs)
     CPU_CORES=$(nproc)
     CPU_THREADS=$(lscpu | grep "^CPU(s):" | awk '{print $2}')
     RAM_TOTAL=$(free -h | grep Mem | awk '{print $2}')
     
-    # Affichage stylé
     echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
     echo -e "${CYAN}│${NC} ${BOLD}Hostname:${NC}     $(hostname)"
     echo -e "${CYAN}│${NC} ${BOLD}OS:${NC}           $(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)"
@@ -248,7 +206,6 @@ get_system_info() {
     echo -e "${CYAN}│${NC}     ${GREEN}${RAM_TOTAL}${NC} RAM"
     echo -e "${CYAN}├─────────────────────────────────────────────────────────────────┤${NC}"
     
-    # GPU Info
     if command -v lspci &> /dev/null; then
         GPU_INFO=$(lspci | grep -i "vga\|3d\|display" | cut -d':' -f3 | xargs | head -1)
         echo -e "${CYAN}│${NC} ${WHITE}${BOLD}🎮  GPU${NC}"
@@ -257,7 +214,6 @@ get_system_info() {
     
     echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
     
-    # Sauvegarde dans le fichier
     {
         echo "CPU: $CPU_MODEL ($CPU_CORES cores / $CPU_THREADS threads)"
         echo "RAM: $RAM_TOTAL"
@@ -268,16 +224,11 @@ get_system_info() {
     sleep 2
 }
 
-# ============================================
-# TESTS DE PERFORMANCE
-# ============================================
-
 test_cpu() {
     section_header "TEST CPU - Puissance de Calcul" "🖥️"
     
     echo "=== CPU BENCHMARK ===" >> "$RESULTS_FILE"
     
-    # Test single-thread
     print_info "Test single-thread en cours..."
     echo ""
     
@@ -298,7 +249,6 @@ test_cpu() {
     echo -e "${WHITE}Single-thread:${NC} ${GREEN}${BOLD}${single_result}${NC} events/sec"
     echo ""
     
-    # Test multi-thread
     print_info "Test multi-thread avec ${CPU_THREADS} threads..."
     echo ""
     
@@ -319,7 +269,6 @@ test_cpu() {
     echo -e "${WHITE}Multi-thread:${NC}  ${GREEN}${BOLD}${multi_result}${NC} events/sec"
     echo ""
     
-    # Calcul du score
     local single_score=$(echo "scale=2; ($single_result / 2000) * 50" | bc)
     local multi_score=$(echo "scale=2; ($multi_result / 16000) * 50" | bc)
     CPU_SCORE=$(echo "scale=2; $single_score + $multi_score" | bc)
@@ -330,7 +279,7 @@ test_cpu() {
     {
         echo "Single-thread: $single_result events/sec"
         echo "Multi-thread: $multi_result events/sec"
-        echo "Score: ${CPU_SCORE}/100"
+        echo "CPU: ${CPU_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
     
@@ -363,7 +312,6 @@ test_ram() {
     echo -e "${WHITE}Vitesse:${NC} ${GREEN}${BOLD}${mem_write}${NC} MiB/sec"
     echo ""
     
-    # Calcul du score
     RAM_SCORE=$(echo "scale=2; ($mem_write / 10000) * 100" | bc)
     RAM_SCORE=$(echo "if ($RAM_SCORE > 100) 100 else $RAM_SCORE" | bc)
     
@@ -371,7 +319,7 @@ test_ram() {
     
     {
         echo "Vitesse: $mem_write MiB/sec"
-        echo "Score: ${RAM_SCORE}/100"
+        echo "RAM: ${RAM_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
     
@@ -384,13 +332,12 @@ test_disk() {
     
     echo "=== DISK BENCHMARK ===" >> "$RESULTS_FILE"
     
-    local test_dir="$HOME/benchmark_disk_test"
+    local test_dir="$SCRIPT_DIR/benchmark_disk_test"
     mkdir -p "$test_dir"
     
     print_warning "Création de fichiers temporaires (~2GB)"
     echo ""
     
-    # Test écriture
     print_info "Test écriture séquentielle..."
     echo ""
     
@@ -411,7 +358,6 @@ test_disk() {
     echo -e "${WHITE}Écriture:${NC} ${GREEN}${BOLD}${seq_write}${NC} MiB/s"
     echo ""
     
-    # Test lecture
     print_info "Test lecture séquentielle..."
     echo ""
     
@@ -432,7 +378,6 @@ test_disk() {
     echo -e "${WHITE}Lecture:${NC}  ${GREEN}${BOLD}${seq_read}${NC} MiB/s"
     echo ""
     
-    # Test IOPS
     print_info "Test IOPS aléatoires (4K)..."
     echo ""
     
@@ -453,11 +398,9 @@ test_disk() {
     echo -e "${WHITE}IOPS:${NC}     ${GREEN}${BOLD}${rand_iops}${NC}"
     echo ""
     
-    # Nettoyage
     rm -rf "$test_dir"
     rm -f /tmp/fio_*.json
     
-    # Calcul du score
     local seq_score=$(echo "scale=2; ($seq_read / 3000) * 50" | bc)
     local iops_score=$(echo "scale=2; ($rand_iops / 50000) * 50" | bc)
     DISK_SCORE=$(echo "scale=2; $seq_score + $iops_score" | bc)
@@ -469,7 +412,7 @@ test_disk() {
         echo "Écriture: $seq_write MiB/s"
         echo "Lecture: $seq_read MiB/s"
         echo "IOPS: $rand_iops"
-        echo "Score: ${DISK_SCORE}/100"
+        echo "Disque: ${DISK_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
     
@@ -484,7 +427,7 @@ test_gpu() {
     if [ -z "$DISPLAY" ] || ! command -v glxgears &> /dev/null; then
         print_warning "Test GPU non disponible"
         GPU_SCORE=50
-        echo "GPU: Non testé" >> "$RESULTS_FILE"
+        echo "GPU: 50.00/100" >> "$RESULTS_FILE"
         echo ""
         sleep 1
         return
@@ -521,7 +464,7 @@ test_gpu() {
     
     {
         echo "FPS: $fps"
-        echo "Score: ${GPU_SCORE}/100"
+        echo "GPU: ${GPU_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
     
@@ -529,14 +472,9 @@ test_gpu() {
     sleep 1
 }
 
-# ============================================
-# SCORE FINAL AVEC ANIMATION
-# ============================================
-
 calculate_final_score() {
     section_header "Analyse des Résultats" "📊"
     
-    # Animation de calcul
     print_info "Calcul du score final en cours..."
     echo ""
     for i in {1..100}; do
@@ -546,15 +484,12 @@ calculate_final_score() {
     clear_line
     echo ""
     
-    # Calcul
     FINAL_SCORE=$(echo "scale=2; ($CPU_SCORE * 0.35) + ($RAM_SCORE * 0.20) + ($DISK_SCORE * 0.30) + ($GPU_SCORE * 0.15)" | bc)
     
-    # Affichage du tableau de scores
     echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${CYAN}║${NC}                    ${WHITE}${BOLD}TABLEAU DES SCORES${NC}                           ${BOLD}${CYAN}║${NC}"
     echo -e "${BOLD}${CYAN}╠════════════════════════════════════════════════════════════════════╣${NC}"
     
-    # Fonction pour afficher une ligne de score
     print_score_line() {
         local icon=$1
         local name=$2
@@ -583,7 +518,6 @@ calculate_final_score() {
     
     echo -e "${BOLD}${CYAN}╠════════════════════════════════════════════════════════════════════╣${NC}"
     
-    # Score final avec couleur selon valeur
     local int_final=${FINAL_SCORE%.*}
     local final_color=$RED
     local category=""
@@ -592,11 +526,11 @@ calculate_final_score() {
     if [ $int_final -ge 80 ]; then
         final_color=$GREEN
         category="EXCELLENT"
-        cat_icon=$TROPHY
+        cat_icon="🏆"
     elif [ $int_final -ge 60 ]; then
         final_color=$CYAN
         category="BON"
-        cat_icon=$SPARKLE
+        cat_icon="✨"
     elif [ $int_final -ge 40 ]; then
         final_color=$YELLOW
         category="MOYEN"
@@ -607,7 +541,6 @@ calculate_final_score() {
         cat_icon="⚠️ "
     fi
     
-    # Affichage animé du score final
     printf "${BOLD}${CYAN}║${NC}                                                                    ${BOLD}${CYAN}║${NC}\n"
     printf "${BOLD}${CYAN}║${NC}                    ${WHITE}${BOLD}SCORE FINAL${NC}                                ${BOLD}${CYAN}║${NC}\n"
     printf "${BOLD}${CYAN}║${NC}                  ${final_color}${BOLD}%6.2f${NC} / 100                              ${BOLD}${CYAN}║${NC}\n" "$FINAL_SCORE"
@@ -616,13 +549,12 @@ calculate_final_score() {
     
     echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════════════╝${NC}"
     
-    # Animation finale
     echo ""
     if [ $int_final -ge 80 ]; then
-        echo -e "        ${GREEN}${BOLD}${FIRE} PC TRÈS PERFORMANT ${FIRE}${NC}"
+        echo -e "        ${GREEN}${BOLD}🔥 PC TRÈS PERFORMANT 🔥${NC}"
         echo -e "        ${DIM}Performance de haut niveau${NC}"
     elif [ $int_final -ge 60 ]; then
-        echo -e "        ${CYAN}${BOLD}${SPARKLE} PC PERFORMANT ${SPARKLE}${NC}"
+        echo -e "        ${CYAN}${BOLD}✨ PC PERFORMANT ✨${NC}"
         echo -e "        ${DIM}Bonnes performances générales${NC}"
     elif [ $int_final -ge 40 ]; then
         echo -e "        ${YELLOW}${BOLD}👍 PC STANDARD 👍${NC}"
@@ -632,7 +564,6 @@ calculate_final_score() {
         echo -e "        ${DIM}Upgrade recommandé${NC}"
     fi
     
-    # Sauvegarde
     {
         echo "=== SCORES FINAUX ==="
         echo "CPU: ${CPU_SCORE}/100"
@@ -646,10 +577,6 @@ calculate_final_score() {
     sleep 2
 }
 
-# ============================================
-# FIN DU BENCHMARK
-# ============================================
-
 show_completion() {
     echo ""
     section_header "Benchmark Terminé !" "🎉"
@@ -657,22 +584,17 @@ show_completion() {
     echo -e "${GREEN}${BOLD}${CHECK} Résultats sauvegardés:${NC}"
     echo -e "   ${WHITE}${UNDERLINE}$RESULTS_FILE${NC}"
     echo ""
-    echo -e "${CYAN}${BOLD}${CHART} Prochaines étapes:${NC}"
-    echo -e "   ${WHITE}•${NC} Comparer avec d'autres benchmarks: ${YELLOW}./compare_benchmarks.sh${NC}"
-    echo -e "   ${WHITE}•${NC} Générer un rapport HTML: ${YELLOW}./generate_html_report.sh${NC}"
-    echo -e "   ${WHITE}•${NC} Voir tous les résultats: ${YELLOW}ls -lh ~/benchmark_results/${NC}"
+    echo -e "${CYAN}${BOLD}📊 Prochaines étapes:${NC}"
+    echo -e "   ${WHITE}•${NC} Comparer avec d'autres benchmarks: ${YELLOW}./compare_benchmarks_v2.sh${NC}"
+    echo -e "   ${WHITE}•${NC} Générer un rapport HTML: ${YELLOW}./generate_html_report_v2.sh${NC}"
+    echo -e "   ${WHITE}•${NC} Voir tous les résultats: ${YELLOW}ls -lh ./results/${NC}"
     echo ""
     
-    # Animation de fin
     echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "                    ${CYAN}Merci d'avoir utilisé BenchmarkPro${NC}                 "
     echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 }
-
-# ============================================
-# MAIN
-# ============================================
 
 main() {
     animated_title
@@ -684,7 +606,6 @@ main() {
     
     echo ""
     
-    # Tests
     check_dependencies
     get_system_info
     test_cpu
@@ -695,5 +616,4 @@ main() {
     show_completion
 }
 
-# Lancer le programme
 main

@@ -13,12 +13,14 @@ NC='\033[0m'
 BOLD='\033[1m'
 DIM='\033[2m'
 
-RESULTS_DIR="$HOME/benchmark_results"
+# Obtenir le dossier du script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS_DIR="$SCRIPT_DIR/results"
 
 # Bannière
 clear
 echo -e "${BOLD}${MAGENTA}"
-cat << "EOF"
+cat << "BANNER_EOF"
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║                                                                       ║
 ║     ██████╗ ██████╗ ███╗   ███╗██████╗  █████╗ ██████╗ ███████╗      ║
@@ -30,12 +32,12 @@ cat << "EOF"
 ║                                                                       ║
 ║                    Comparaison de Benchmarks                          ║
 ╚═══════════════════════════════════════════════════════════════════════╝
-EOF
+BANNER_EOF
 echo -e "${NC}\n"
 
 # Vérifier les résultats
 if [ ! -d "$RESULTS_DIR" ]; then
-    echo -e "${RED}✗ Aucun résultat trouvé${NC}"
+    echo -e "${RED}✗ Aucun résultat trouvé dans $RESULTS_DIR${NC}"
     exit 1
 fi
 
@@ -101,7 +103,7 @@ file2="${files[$((choice2-1))]}"
 
 # Extraction des scores
 extract_score() {
-    grep "$1:" "$2" | grep -oP '\d+\.\d+' | head -1
+    grep "^$1:" "$2" | grep -oP '\d+\.\d+' | head -1
 }
 
 cpu1=$(extract_score "CPU" "$file1")
