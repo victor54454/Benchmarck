@@ -1,0 +1,6 @@
+=== SYSTEM INFO ===
+CPU:  (16 cores /  threads)
+RAM: 15Gi
+GPU: Intel Corporation CometLake-S GT2 [UHD Graphics 630] (rev 05)
+
+=== CPU BENCHMARK ===
