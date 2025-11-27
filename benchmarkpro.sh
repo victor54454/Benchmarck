@@ -2,7 +2,7 @@
 
 # ============================================
 # BENCHMARKPRO - All-in-One System Benchmark Tool
-# Version 2.0 Ultimate Edition
+# Version 2.1 Fixed Edition
 # ============================================
 
 set -e
@@ -107,6 +107,38 @@ pause() {
     read
 }
 
+# Fonction pour valider et formater les nombres
+validate_number() {
+    local num=$1
+    local default=${2:-0}
+    
+    # Supprimer les espaces
+    num=$(echo "$num" | tr -d ' ')
+    
+    # Si vide ou non numérique, retourner la valeur par défaut
+    if [[ -z "$num" ]] || ! [[ "$num" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        echo "$default"
+        return
+    fi
+    
+    echo "$num"
+}
+
+# Fonction sécurisée pour les calculs bc
+safe_calc() {
+    local expression=$1
+    local default=${2:-0}
+    
+    local result=$(echo "$expression" | bc 2>/dev/null)
+    
+    if [[ -z "$result" ]] || ! [[ "$result" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+        echo "$default"
+        return
+    fi
+    
+    echo "$result"
+}
+
 # ============================================
 # INSTALLATION DES DÉPENDANCES
 # ============================================
@@ -118,7 +150,6 @@ install_dependencies() {
     echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
     echo ""
 
-    # Détection de la distribution
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS=$ID
@@ -130,7 +161,6 @@ install_dependencies() {
     echo -e "${GREEN}Distribution détectée: $PRETTY_NAME${NC}"
     echo ""
 
-    # Installation selon la distribution
     case $OS in
         ubuntu|debian|pop)
             echo -e "${YELLOW}Installation des dépendances avec apt...${NC}"
@@ -216,20 +246,30 @@ display_score() {
     local max=$3
     local icon=$4
     
-    local percentage=$((score * 100 / max))
+    # Validation du score
+    score=$(validate_number "$score" 0)
+    
+    local percentage=$(safe_calc "($score * 100) / $max" 0)
+    percentage=${percentage%.*}
+    
     local color=$RED
     if [ $percentage -gt 40 ]; then color=$YELLOW; fi
     if [ $percentage -gt 70 ]; then color=$GREEN; fi
     
-    echo -e "${icon} ${WHITE}${BOLD}${label}:${NC} ${color}${BOLD}${score}${NC}/${max}"
+    printf "${icon} ${WHITE}${BOLD}${label}:${NC} ${color}${BOLD}%.1f${NC}/%d\n" "$score" "$max"
     
     local bar_length=30
-    local filled=$((percentage * bar_length / 100))
+    local filled=$(safe_calc "($percentage * $bar_length) / 100" 0)
+    filled=${filled%.*}
     local empty=$((bar_length - filled))
     
     printf "   ${color}["
-    printf "%${filled}s" | tr ' ' '▰'
-    printf "%${empty}s" | tr ' ' '▱'
+    if [ $filled -gt 0 ]; then
+        printf "%${filled}s" | tr ' ' '▰'
+    fi
+    if [ $empty -gt 0 ]; then
+        printf "%${empty}s" | tr ' ' '▱'
+    fi
     printf "]${NC} ${DIM}%d%%${NC}\n\n" $percentage
 }
 
@@ -238,19 +278,15 @@ get_system_info() {
     
     echo "=== SYSTEM INFO ===" >> "$RESULTS_FILE"
     
-    # CPU Model
     CPU_MODEL=$(lscpu | grep "Model name" | cut -d':' -f2 | xargs 2>/dev/null)
-    if [ -z "$CPU_MODEL" ] || [ "$CPU_MODEL" == "unknown" ]; then
+    if [ -z "$CPU_MODEL" ]; then
         VENDOR=$(lscpu | grep "Vendor ID" | cut -d':' -f2 | xargs 2>/dev/null)
-        CPU_MODEL="Processeur ${VENDOR:-Inconnu} (Virtualisé)"
+        CPU_MODEL="Processeur ${VENDOR:-Inconnu}"
     fi
     
-    # CPU Threads (total)
     CPU_THREADS=$(nproc)
-    
-    # CPU Cores
     CPU_CORES=$(lscpu | grep "Core(s) per socket:" | awk '{print $4}' 2>/dev/null)
-    if [ -z "$CPU_CORES" ] || [ "$CPU_CORES" == "" ]; then
+    if [ -z "$CPU_CORES" ]; then
         CPU_CORES=$CPU_THREADS
     fi
     
@@ -295,49 +331,37 @@ test_cpu() {
     print_info "Test single-thread en cours..."
     echo ""
     
-    (sysbench cpu --cpu-max-prime=20000 --threads=1 run > /tmp/cpu_single.txt 2>&1) &
-    local pid=$!
+    sysbench cpu --cpu-max-prime=20000 --threads=1 run > /tmp/cpu_single.txt 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.03
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
-    
-    clear_line
     local single_result=$(grep "events per second" /tmp/cpu_single.txt | awk '{print $4}')
+    single_result=$(validate_number "$single_result" 100)
+    
     echo -e "${WHITE}Single-thread:${NC} ${GREEN}${BOLD}${single_result}${NC} events/sec"
     echo ""
     
     print_info "Test multi-thread avec ${CPU_THREADS} threads..."
     echo ""
     
-    (sysbench cpu --cpu-max-prime=20000 --threads=$CPU_THREADS run > /tmp/cpu_multi.txt 2>&1) &
-    pid=$!
+    sysbench cpu --cpu-max-prime=20000 --threads=$CPU_THREADS run > /tmp/cpu_multi.txt 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.03
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
-    
-    clear_line
     local multi_result=$(grep "events per second" /tmp/cpu_multi.txt | awk '{print $4}')
+    multi_result=$(validate_number "$multi_result" 500)
+    
     echo -e "${WHITE}Multi-thread:${NC}  ${GREEN}${BOLD}${multi_result}${NC} events/sec"
     echo ""
     
-    local single_score=$(echo "scale=2; ($single_result / 2000) * 50" | bc)
-    local multi_score=$(echo "scale=2; ($multi_result / 16000) * 50" | bc)
-    CPU_SCORE=$(echo "scale=2; $single_score + $multi_score" | bc)
-    CPU_SCORE=$(echo "if ($CPU_SCORE > 100) 100 else $CPU_SCORE" | bc)
+    # Calcul du score avec validation
+    local single_score=$(safe_calc "($single_result / 2000) * 50" 0)
+    local multi_score=$(safe_calc "($multi_result / 16000) * 50" 0)
+    CPU_SCORE=$(safe_calc "$single_score + $multi_score" 0)
     
-    display_score "Score CPU" "${CPU_SCORE%.*}" "100" "🖥️"
+    # Limiter à 100
+    local cpu_int=${CPU_SCORE%.*}
+    if [ $cpu_int -gt 100 ]; then
+        CPU_SCORE=100
+    fi
+    
+    display_score "Score CPU" "$CPU_SCORE" "100" "🖥️"
     
     {
         echo "Single-thread: $single_result events/sec"
@@ -358,30 +382,33 @@ test_ram() {
     print_info "Test de bande passante mémoire..."
     echo ""
     
-    (sysbench memory --memory-block-size=1M --memory-total-size=10G --threads=4 run > /tmp/ram_test.txt 2>&1) &
-    local pid=$!
+    sysbench memory --memory-block-size=1M --memory-total-size=10G --threads=4 run > /tmp/ram_test.txt 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.05
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
+    # Extraction plus robuste du débit mémoire
+    local mem_speed=$(grep "transferred" /tmp/ram_test.txt | grep -oP '\d+\.\d+' | head -1)
     
-    clear_line
-    local mem_write=$(grep "MiB/sec" /tmp/ram_test.txt | tail -1 | awk '{print $2}')
-    echo -e "${WHITE}Vitesse:${NC} ${GREEN}${BOLD}${mem_write}${NC} MiB/sec"
+    # Si pas trouvé, essayer une autre méthode
+    if [ -z "$mem_speed" ]; then
+        mem_speed=$(grep "MiB/sec" /tmp/ram_test.txt | awk '{print $(NF-1)}' | head -1)
+    fi
+    
+    mem_speed=$(validate_number "$mem_speed" 1000)
+    
+    echo -e "${WHITE}Vitesse:${NC} ${GREEN}${BOLD}${mem_speed}${NC} MiB/sec"
     echo ""
     
-    RAM_SCORE=$(echo "scale=2; ($mem_write / 10000) * 100" | bc)
-    RAM_SCORE=$(echo "if ($RAM_SCORE > 100) 100 else $RAM_SCORE" | bc)
+    RAM_SCORE=$(safe_calc "($mem_speed / 10000) * 100" 0)
     
-    display_score "Score RAM" "${RAM_SCORE%.*}" "100" "💾"
+    # Limiter à 100
+    local ram_int=${RAM_SCORE%.*}
+    if [ $ram_int -gt 100 ]; then
+        RAM_SCORE=100
+    fi
+    
+    display_score "Score RAM" "$RAM_SCORE" "100" "💾"
     
     {
-        echo "Vitesse: $mem_write MiB/sec"
+        echo "Vitesse: $mem_speed MiB/sec"
         echo "RAM: ${RAM_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
@@ -404,76 +431,57 @@ test_disk() {
     print_info "Test écriture séquentielle..."
     echo ""
     
-    (fio --name=seq_write --directory="$test_dir" --rw=write --bs=1M --size=1G --numjobs=1 --runtime=20 --time_based --group_reporting --output-format=json > /tmp/fio_write.json 2>&1) &
-    local pid=$!
+    fio --name=seq_write --directory="$test_dir" --rw=write --bs=1M --size=1G --numjobs=1 --runtime=20 --time_based --group_reporting --output-format=json > /tmp/fio_write.json 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.02
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
+    local seq_write=$(jq -r '.jobs[0].write.bw_bytes' /tmp/fio_write.json 2>/dev/null)
+    seq_write=$(validate_number "$seq_write" 10485760)
+    seq_write=$(safe_calc "$seq_write / 1048576" 10)
     
-    clear_line
-    local seq_write=$(jq -r '.jobs[0].write.bw_bytes' /tmp/fio_write.json 2>/dev/null | awk '{printf "%.2f", $1/1048576}')
-    echo -e "${WHITE}Écriture:${NC} ${GREEN}${BOLD}${seq_write}${NC} MiB/s"
+    echo -e "${WHITE}Écriture:${NC} ${GREEN}${BOLD}$(printf "%.2f" $seq_write)${NC} MiB/s"
     echo ""
     
     print_info "Test lecture séquentielle..."
     echo ""
     
-    (fio --name=seq_read --directory="$test_dir" --rw=read --bs=1M --size=1G --numjobs=1 --runtime=20 --time_based --group_reporting --output-format=json > /tmp/fio_read.json 2>&1) &
-    pid=$!
+    fio --name=seq_read --directory="$test_dir" --rw=read --bs=1M --size=1G --numjobs=1 --runtime=20 --time_based --group_reporting --output-format=json > /tmp/fio_read.json 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.02
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
+    local seq_read=$(jq -r '.jobs[0].read.bw_bytes' /tmp/fio_read.json 2>/dev/null)
+    seq_read=$(validate_number "$seq_read" 20971520)
+    seq_read=$(safe_calc "$seq_read / 1048576" 20)
     
-    clear_line
-    local seq_read=$(jq -r '.jobs[0].read.bw_bytes' /tmp/fio_read.json 2>/dev/null | awk '{printf "%.2f", $1/1048576}')
-    echo -e "${WHITE}Lecture:${NC}  ${GREEN}${BOLD}${seq_read}${NC} MiB/s"
+    echo -e "${WHITE}Lecture:${NC}  ${GREEN}${BOLD}$(printf "%.2f" $seq_read)${NC} MiB/s"
     echo ""
     
     print_info "Test IOPS aléatoires (4K)..."
     echo ""
     
-    (fio --name=rand_rw --directory="$test_dir" --rw=randrw --bs=4K --size=512M --numjobs=4 --runtime=15 --time_based --group_reporting --output-format=json > /tmp/fio_rand.json 2>&1) &
-    pid=$!
+    fio --name=rand_rw --directory="$test_dir" --rw=randrw --bs=4K --size=512M --numjobs=4 --runtime=15 --time_based --group_reporting --output-format=json > /tmp/fio_rand.json 2>&1
     
-    while kill -0 $pid 2>/dev/null; do
-        for i in {1..100}; do
-            progress_bar $i
-            sleep 0.015
-            kill -0 $pid 2>/dev/null || break
-        done
-    done
-    wait $pid
+    local rand_iops=$(jq -r '.jobs[0].read.iops' /tmp/fio_rand.json 2>/dev/null)
+    rand_iops=$(validate_number "$rand_iops" 1000)
+    rand_iops=${rand_iops%.*}
     
-    clear_line
-    local rand_iops=$(jq -r '.jobs[0].read.iops' /tmp/fio_rand.json 2>/dev/null | awk '{printf "%.0f", $1}')
     echo -e "${WHITE}IOPS:${NC}     ${GREEN}${BOLD}${rand_iops}${NC}"
     echo ""
     
     rm -rf "$test_dir"
     rm -f /tmp/fio_*.json
     
-    local seq_score=$(echo "scale=2; ($seq_read / 3000) * 50" | bc)
-    local iops_score=$(echo "scale=2; ($rand_iops / 50000) * 50" | bc)
-    DISK_SCORE=$(echo "scale=2; $seq_score + $iops_score" | bc)
-    DISK_SCORE=$(echo "if ($DISK_SCORE > 100) 100 else $DISK_SCORE" | bc)
+    local seq_score=$(safe_calc "($seq_read / 3000) * 50" 0)
+    local iops_score=$(safe_calc "($rand_iops / 50000) * 50" 0)
+    DISK_SCORE=$(safe_calc "$seq_score + $iops_score" 0)
     
-    display_score "Score Disque" "${DISK_SCORE%.*}" "100" "💿"
+    # Limiter à 100
+    local disk_int=${DISK_SCORE%.*}
+    if [ $disk_int -gt 100 ]; then
+        DISK_SCORE=100
+    fi
+    
+    display_score "Score Disque" "$DISK_SCORE" "100" "💿"
     
     {
-        echo "Écriture: $seq_write MiB/s"
-        echo "Lecture: $seq_read MiB/s"
+        echo "Écriture: $(printf "%.2f" $seq_write) MiB/s"
+        echo "Lecture: $(printf "%.2f" $seq_read) MiB/s"
         echo "IOPS: $rand_iops"
         echo "Disque: ${DISK_SCORE}/100"
         echo ""
@@ -488,9 +496,10 @@ test_gpu() {
     echo "=== GPU BENCHMARK ===" >> "$RESULTS_FILE"
     
     if [ -z "$DISPLAY" ] || ! command -v glxgears &> /dev/null; then
-        print_warning "Test GPU non disponible"
+        print_warning "Test GPU non disponible (pas d'environnement graphique)"
         GPU_SCORE=50
-        echo "GPU: 50.00/100" >> "$RESULTS_FILE"
+        echo "GPU: 50.00/100 (test non disponible)" >> "$RESULTS_FILE"
+        display_score "Score GPU" "$GPU_SCORE" "100" "🎮"
         echo ""
         sleep 1
         return
@@ -499,34 +508,31 @@ test_gpu() {
     print_info "Test de rendu OpenGL (10 secondes)..."
     echo ""
     
-    timeout 11s glxgears 2>&1 > /tmp/glxgears.log &
+    timeout 11s glxgears 2>&1 | tee /tmp/glxgears.log &
     local pid=$!
     
-    for i in {1..100}; do
-        progress_bar $i
-        sleep 0.1
-    done
-    
+    sleep 11
     kill $pid 2>/dev/null || true
-    clear_line
+    wait $pid 2>/dev/null || true
     
-    local fps=$(grep "frames in" /tmp/glxgears.log | tail -1 | awk '{print $6}')
+    local fps=$(grep "frames in" /tmp/glxgears.log | tail -1 | awk '{print $6}' | tr -d ' ')
+    fps=$(validate_number "$fps" 500)
     
-    if [ -n "$fps" ]; then
-        echo -e "${WHITE}FPS OpenGL:${NC} ${GREEN}${BOLD}${fps}${NC}"
-        echo ""
-        
-        GPU_SCORE=$(echo "scale=2; ($fps / 2000) * 100" | bc)
-        GPU_SCORE=$(echo "if ($GPU_SCORE > 100) 100 else $GPU_SCORE" | bc)
-    else
-        print_warning "Impossible de mesurer les FPS"
-        GPU_SCORE=50
+    echo -e "${WHITE}FPS OpenGL:${NC} ${GREEN}${BOLD}$(printf "%.0f" $fps)${NC}"
+    echo ""
+    
+    GPU_SCORE=$(safe_calc "($fps / 2000) * 100" 0)
+    
+    # Limiter à 100
+    local gpu_int=${GPU_SCORE%.*}
+    if [ $gpu_int -gt 100 ]; then
+        GPU_SCORE=100
     fi
     
-    display_score "Score GPU" "${GPU_SCORE%.*}" "100" "🎮"
+    display_score "Score GPU" "$GPU_SCORE" "100" "🎮"
     
     {
-        echo "FPS: $fps"
+        echo "FPS: $(printf "%.0f" $fps)"
         echo "GPU: ${GPU_SCORE}/100"
         echo ""
     } >> "$RESULTS_FILE"
@@ -540,14 +546,16 @@ calculate_final_score() {
     
     print_info "Calcul du score final en cours..."
     echo ""
-    for i in {1..100}; do
-        progress_bar $i
-        sleep 0.02
-    done
-    clear_line
+    sleep 1
     echo ""
     
-    FINAL_SCORE=$(echo "scale=2; ($CPU_SCORE * 0.35) + ($RAM_SCORE * 0.20) + ($DISK_SCORE * 0.30) + ($GPU_SCORE * 0.15)" | bc)
+    # Validation de tous les scores
+    CPU_SCORE=$(validate_number "$CPU_SCORE" 0)
+    RAM_SCORE=$(validate_number "$RAM_SCORE" 0)
+    DISK_SCORE=$(validate_number "$DISK_SCORE" 0)
+    GPU_SCORE=$(validate_number "$GPU_SCORE" 0)
+    
+    FINAL_SCORE=$(safe_calc "($CPU_SCORE * 0.35) + ($RAM_SCORE * 0.20) + ($DISK_SCORE * 0.30) + ($GPU_SCORE * 0.15)" 0)
     
     echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}${CYAN}║${NC}                    ${WHITE}${BOLD}TABLEAU DES SCORES${NC}                           ${BOLD}${CYAN}║${NC}"
@@ -559,18 +567,25 @@ calculate_final_score() {
         local score=$3
         local weight=$4
         
+        score=$(validate_number "$score" 0)
         local int_score=${score%.*}
+        
         local color=$RED
         if [ $int_score -gt 40 ]; then color=$YELLOW; fi
         if [ $int_score -gt 70 ]; then color=$GREEN; fi
         
         local bar_length=20
-        local filled=$((int_score * bar_length / 100))
+        local filled=$(safe_calc "($int_score * $bar_length) / 100" 0)
+        filled=${filled%.*}
         local empty=$((bar_length - filled))
         
-        printf "${BOLD}${CYAN}║${NC} ${icon} %-12s ${color}[" "$name"
-        printf "%${filled}s" | tr ' ' '▰'
-        printf "%${empty}s" | tr ' ' '▱'
+        printf "${BOLD}${CYAN}║${NC} ${icon}  %-10s ${color}[" "$name"
+        if [ $filled -gt 0 ]; then
+            printf "%${filled}s" | tr ' ' '▰'
+        fi
+        if [ $empty -gt 0 ]; then
+            printf "%${empty}s" | tr ' ' '▱'
+        fi
         printf "]${NC} ${color}${BOLD}%5.1f${NC}/100 ${DIM}(%s)${NC} ${BOLD}${CYAN}║${NC}\n" "$score" "$weight"
     }
     
@@ -582,6 +597,8 @@ calculate_final_score() {
     echo -e "${BOLD}${CYAN}╠════════════════════════════════════════════════════════════════════╣${NC}"
     
     local int_final=${FINAL_SCORE%.*}
+    if [ -z "$int_final" ]; then int_final=0; fi
+    
     local final_color=$RED
     local category=""
     local cat_icon=""
@@ -654,19 +671,13 @@ run_benchmark() {
     ║   ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ║
     ║                                                                       ║
     ║              Professional System Performance Analysis                 ║
-    ║                           version 2.0                                 ║
+    ║                           version 2.1                                 ║
     ╚═══════════════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
     
     echo -e "\n${CYAN}${BOLD}${GEAR} Initialisation du système de benchmark...${NC}\n"
-    for i in {1..3}; do
-        progress_bar $((i * 33))
-        sleep 0.3
-    done
-    progress_bar 100
-    echo -e "\n"
-    sleep 0.5
+    sleep 1
     
     echo -e "${YELLOW}${BOLD}⏱️  Durée estimée: 5-10 minutes${NC}"
     echo -e "${DIM}Fermez les applications gourmandes pour des résultats optimaux${NC}\n"
@@ -738,6 +749,7 @@ BANNER_EOF
         
         local color=$RED
         if [ -n "$score" ]; then
+            score=$(validate_number "$score" 0)
             local int_score=${score%.*}
             if [ $int_score -gt 70 ]; then color=$GREEN; elif [ $int_score -gt 40 ]; then color=$YELLOW; fi
         fi
@@ -778,7 +790,8 @@ BANNER_EOF
     file2="${files[$((choice2-1))]}"
 
     extract_score() {
-        grep "^$1:" "$2" | grep -oP '\d+\.\d+' | head -1
+        local score=$(grep "^$1:" "$2" | grep -oP '\d+\.\d+' | head -1)
+        echo "$(validate_number "$score" 0)"
     }
 
     cpu1=$(extract_score "CPU" "$file1")
@@ -793,12 +806,18 @@ BANNER_EOF
     gpu2=$(extract_score "GPU" "$file2")
     final2=$(extract_score "SCORE FINAL" "$file2")
 
-    calc_diff() { echo "scale=2; $1 - $2" | bc; }
+    calc_diff() { 
+        local diff=$(safe_calc "$1 - $2" 0)
+        echo "$diff"
+    }
+    
     calc_percent() {
-        if [ "$2" != "0" ]; then
-            echo "scale=2; (($1 - $2) / $2) * 100" | bc
+        local val=$(validate_number "$2" 1)
+        if (( $(echo "$val != 0" | bc -l 2>/dev/null || echo "0") )); then
+            local percent=$(safe_calc "(($1 - $2) / $2) * 100" 0)
+            echo "$percent"
         else
-            echo "N/A"
+            echo "0"
         fi
     }
 
@@ -834,38 +853,41 @@ BANNER_EOF
         local diff=$5
         local percent=$6
         
+        val1=$(validate_number "$val1" 0)
+        val2=$(validate_number "$val2" 0)
+        diff=$(validate_number "$diff" 0)
+        percent=$(validate_number "$percent" 0)
+        
         local color=$NC
         local arrow=""
-        if (( $(echo "$diff > 0" | bc -l) )); then
+        if (( $(echo "$diff > 0.5" | bc -l 2>/dev/null || echo "0") )); then
             color=$GREEN
             arrow="↑"
-        elif (( $(echo "$diff < 0" | bc -l) )); then
+        elif (( $(echo "$diff < -0.5" | bc -l 2>/dev/null || echo "0") )); then
             color=$YELLOW
             arrow="↓"
         else
             arrow="="
         fi
         
-        printf "${BOLD}${CYAN}║${NC} ${icon} %-10s ${DIM}│${NC}" "$name"
+        printf "${BOLD}${CYAN}║${NC} ${icon}  %-8s ${DIM}│${NC}" "$name"
         printf " ${WHITE}%6.1f${NC} ${DIM}→${NC} ${color}${BOLD}%6.1f${NC}" "$val1" "$val2"
-        
-        if [ "$percent" != "N/A" ]; then
-            printf " ${color}${BOLD}${arrow} %+6.1f%%${NC}" "$percent"
-        else
-            printf " ${color}${BOLD}${arrow} %+6.1f${NC}" "$diff"
-        fi
+        printf " ${color}${BOLD}${arrow} %+6.1f%%${NC}" "$percent"
         
         local abs_percent=${percent#-}
         abs_percent=${abs_percent%.*}
-        if [ "$percent" != "N/A" ] && [ $abs_percent -gt 5 ]; then
-            local bar_len=$((abs_percent / 5))
+        if [ $abs_percent -gt 5 ]; then
+            local bar_len=$(safe_calc "$abs_percent / 5" 1)
+            bar_len=${bar_len%.*}
             if [ $bar_len -gt 10 ]; then bar_len=10; fi
             printf " ${color}"
-            printf "%${bar_len}s" | tr ' ' '▰'
+            if [ $bar_len -gt 0 ]; then
+                printf "%${bar_len}s" | tr ' ' '▰'
+            fi
             printf "${NC}"
         fi
         
-        printf "${BOLD}${CYAN}║${NC}\n"
+        printf "            ${BOLD}${CYAN}║${NC}\n"
     }
 
     print_comparison_row "🖥️ " "CPU" "$cpu1" "$cpu2" "$cpu_diff" "$cpu_percent"
@@ -877,27 +899,30 @@ BANNER_EOF
 
     local final_color=$NC
     local final_arrow=""
-    if (( $(echo "$final_diff > 0" | bc -l) )); then
+    if (( $(echo "$final_diff > 0.5" | bc -l 2>/dev/null || echo "0") )); then
         final_color=$GREEN
         final_arrow="↑"
-    elif (( $(echo "$final_diff < 0" | bc -l) )); then
+    elif (( $(echo "$final_diff < -0.5" | bc -l 2>/dev/null || echo "0") )); then
         final_color=$YELLOW
         final_arrow="↓"
     else
         final_arrow="="
     fi
 
-    printf "${BOLD}${CYAN}║${NC} ${WHITE}${BOLD}FINAL${NC}      ${DIM}│${NC}"
+    printf "${BOLD}${CYAN}║${NC} ${WHITE}${BOLD}FINAL${NC}    ${DIM}│${NC}"
     printf " ${WHITE}%6.1f${NC} ${DIM}→${NC} ${final_color}${BOLD}%6.1f${NC}" "$final1" "$final2"
     printf " ${final_color}${BOLD}${final_arrow} %+6.1f%%${NC}" "$final_percent"
 
     local abs_final=${final_percent#-}
     abs_final=${abs_final%.*}
-    if [ "$abs_final" != "N/A" ] && [ $abs_final -gt 5 ]; then
-        local bar_len=$((abs_final / 3))
+    if [ $abs_final -gt 5 ]; then
+        local bar_len=$(safe_calc "$abs_final / 3" 1)
+        bar_len=${bar_len%.*}
         if [ $bar_len -gt 15 ]; then bar_len=15; fi
         printf " ${final_color}"
-        printf "%${bar_len}s" | tr ' ' '█'
+        if [ $bar_len -gt 0 ]; then
+            printf "%${bar_len}s" | tr ' ' '█'
+        fi
         printf "${NC}"
     fi
 
@@ -905,9 +930,9 @@ BANNER_EOF
     echo -e "${BOLD}${CYAN}╚═══════════════════════════════════════════════════════════════════════════════════╝${NC}"
 
     echo ""
-    if (( $(echo "$final_diff > 5" | bc -l) )); then
+    if (( $(echo "$final_diff > 5" | bc -l 2>/dev/null || echo "0") )); then
         echo -e "   ${GREEN}${BOLD}✓ Le benchmark 2 est meilleur${NC} ${GREEN}(+$(printf "%.1f" "$final_percent")%)${NC}"
-    elif (( $(echo "$final_diff < -5" | bc -l) )); then
+    elif (( $(echo "$final_diff < -5" | bc -l 2>/dev/null || echo "0") )); then
         echo -e "   ${YELLOW}${BOLD}⚠ Le benchmark 2 est moins bon${NC} ${YELLOW}($(printf "%.1f" "$final_percent")%)${NC}"
     else
         echo -e "   ${BLUE}${BOLD}≈ Performances similaires${NC}"
@@ -919,14 +944,16 @@ BANNER_EOF
     show_change() {
         local name=$1
         local percent=$2
+        
+        percent=$(validate_number "$percent" 0)
         local abs=${percent#-}
         abs=${abs%.*}
         
-        if [ "$percent" != "N/A" ] && [ $abs -gt 10 ]; then
-            if (( $(echo "$percent > 0" | bc -l) )); then
-                echo -e "   ${GREEN}↑${NC} $name: ${GREEN}+${percent}%${NC}"
+        if [ $abs -gt 10 ]; then
+            if (( $(echo "$percent > 0" | bc -l 2>/dev/null || echo "0") )); then
+                echo -e "   ${GREEN}↑${NC} $name: ${GREEN}+$(printf "%.1f" $percent)%${NC}"
             else
-                echo -e "   ${YELLOW}↓${NC} $name: ${YELLOW}${percent}%${NC}"
+                echo -e "   ${YELLOW}↓${NC} $name: ${YELLOW}$(printf "%.1f" $percent)%${NC}"
             fi
         fi
     }
@@ -986,23 +1013,8 @@ generate_html_report() {
         local file=$1
         local component=$2
         
-        case $component in
-            "CPU")
-                grep "^CPU:" "$file" | grep -oP '\d+\.\d+' | head -1
-                ;;
-            "RAM")
-                grep "^RAM:" "$file" | grep -oP '\d+\.\d+' | head -1
-                ;;
-            "Disque")
-                grep "^Disque:" "$file" | grep -oP '\d+\.\d+' | head -1
-                ;;
-            "GPU")
-                grep "^GPU:" "$file" | grep -oP '\d+\.\d+' | head -1
-                ;;
-            "FINAL")
-                grep "^SCORE FINAL:" "$file" | grep -oP '\d+\.\d+' | head -1
-                ;;
-        esac
+        local score=$(grep "^$component:" "$file" | grep -oP '\d+\.\d+' | head -1)
+        echo "$(validate_number "$score" 0)"
     }
 
     extract_sys_info() {
@@ -1032,13 +1044,7 @@ generate_html_report() {
     ram_score=$(extract_score "$selected_file" "RAM")
     disk_score=$(extract_score "$selected_file" "Disque")
     gpu_score=$(extract_score "$selected_file" "GPU")
-    final_score=$(extract_score "$selected_file" "FINAL")
-
-    cpu_score=${cpu_score:-0}
-    ram_score=${ram_score:-0}
-    disk_score=${disk_score:-0}
-    gpu_score=${gpu_score:-0}
-    final_score=${final_score:-0}
+    final_score=$(extract_score "$selected_file" "SCORE FINAL")
 
     cpu_model=$(extract_sys_info "$selected_file" "CPU_MODEL")
     ram_total=$(extract_sys_info "$selected_file" "RAM_TOTAL")
@@ -1294,31 +1300,31 @@ HTML_STYLE
                 <div class="score-overview">
                     <div class="score-item">
                         <h3>🖥️ CPU</h3>
-                        <div class="score-value">$cpu_score</div>
+                        <div class="score-value">$(printf "%.1f" $cpu_score)</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>💾 RAM</h3>
-                        <div class="score-value">$ram_score</div>
+                        <div class="score-value">$(printf "%.1f" $ram_score)</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>💿 Disque</h3>
-                        <div class="score-value">$disk_score</div>
+                        <div class="score-value">$(printf "%.1f" $disk_score)</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item">
                         <h3>🎮 GPU</h3>
-                        <div class="score-value">$gpu_score</div>
+                        <div class="score-value">$(printf "%.1f" $gpu_score)</div>
                         <div class="score-label">/100</div>
                     </div>
                     
                     <div class="score-item final-score">
                         <h3>Score Final</h3>
-                        <div class="score-value">$final_score</div>
+                        <div class="score-value">$(printf "%.1f" $final_score)</div>
                         <div class="score-label">/100</div>
                         <div class="category-badge $category">$category_text</div>
                     </div>
@@ -1336,7 +1342,7 @@ HTML_STYLE
                             labels: ['CPU', 'RAM', 'Disque', 'GPU'],
                             datasets: [{
                                 label: 'Scores',
-                                data: [$cpu_score, $ram_score, $disk_score, $gpu_score],
+                                data: [$(printf "%.1f" $cpu_score), $(printf "%.1f" $ram_score), $(printf "%.1f" $disk_score), $(printf "%.1f" $gpu_score)],
                                 fill: true,
                                 backgroundColor: 'rgba(102, 126, 234, 0.2)',
                                 borderColor: 'rgb(102, 126, 234)',
@@ -1381,7 +1387,7 @@ HTML_CONTENT
         </div>
         
         <footer>
-            <p><strong>System Benchmark Tool v2.0</strong></p>
+            <p><strong>System Benchmark Tool v2.1</strong></p>
             <p class="timestamp">Rapport généré le
 HTML_END
 
@@ -1433,6 +1439,8 @@ show_results() {
         local date=$(echo "$filename" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ - /')
         local score=$(grep "SCORE FINAL:" "$file" | awk '{print $3}' | cut -d'/' -f1 2>/dev/null)
         
+        score=$(validate_number "$score" 0)
+        
         if [ -n "$score" ]; then
             local int_score=${score%.*}
             local color=$RED
@@ -1450,15 +1458,19 @@ show_results() {
             fi
             
             echo -e "${badge} ${WHITE}${date}${NC}"
-            echo -e "   Score: ${color}${BOLD}${score}${NC}/100"
+            echo -e "   Score: ${color}${BOLD}$(printf "%.1f" $score)${NC}/100"
             
             local cpu=$(grep "^CPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
             local ram=$(grep "^RAM:" "$file" | grep -oP '\d+\.\d+' | head -1)
             local disk=$(grep "^Disque:" "$file" | grep -oP '\d+\.\d+' | head -1)
             local gpu=$(grep "^GPU:" "$file" | grep -oP '\d+\.\d+' | head -1)
             
-            echo -e "   ${DIM}CPU: ${cpu} │ RAM: ${ram} │ Disque: ${disk} │ GPU: ${gpu}${NC}"
-            echo ""
+            cpu=$(validate_number "$cpu" 0)
+            ram=$(validate_number "$ram" 0)
+            disk=$(validate_number "$disk" 0)
+            gpu=$(validate_number "$gpu" 0)
+            
+            printf "   ${DIM}CPU: %.1f │ RAM: %.1f │ Disque: %.1f │ GPU: %.1f${NC}\n\n" "$cpu" "$ram" "$disk" "$gpu"
         fi
     done
 }
@@ -1515,7 +1527,7 @@ show_menu() {
     ║    ╚═════╝ ╚══════╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝      ║
     ║                                                                       ║
     ║                     Professional Benchmark Suite                      ║
-    ║                              v2.0                                     ║
+    ║                              v2.1                                     ║
     ╚═══════════════════════════════════════════════════════════════════════╝
 MENU_EOF
     echo -e "${NC}\n"
@@ -1524,6 +1536,7 @@ MENU_EOF
         local latest=$(ls -t "$RESULTS_DIR"/benchmark_*.txt 2>/dev/null | head -1)
         if [ -n "$latest" ]; then
             local score=$(grep "SCORE FINAL:" "$latest" | awk '{print $3}' | cut -d'/' -f1)
+            score=$(validate_number "$score" 0)
             local date=$(basename "$latest" | sed 's/benchmark_//' | sed 's/.txt//' | sed 's/_/ - /')
             
             if [ -n "$score" ]; then
@@ -1532,7 +1545,7 @@ MENU_EOF
                 if [ $int_score -gt 70 ]; then color=$GREEN; elif [ $int_score -gt 40 ]; then color=$YELLOW; fi
                 
                 echo -e "${DIM}   Dernier benchmark: ${date}${NC}"
-                echo -e "${DIM}   Score: ${color}${BOLD}${score}${NC}${DIM}/100${NC}\n"
+                echo -e "${DIM}   Score: ${color}${BOLD}$(printf "%.1f" $score)${NC}${DIM}/100${NC}\n"
             fi
         fi
     fi

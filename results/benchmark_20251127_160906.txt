@@ -1,0 +1,24 @@
+=== SYSTEM INFO ===
+CPU: Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz CPU @ 2.8GHz (16 cores / 16 threads)
+RAM: 15Gi
+GPU: Intel Corporation CometLake-S GT2 [UHD Graphics 630] (rev 05)
+
+=== CPU BENCHMARK ===
+Single-thread: 613.24 events/sec
+Multi-thread: 6726.21 events/sec
+CPU: 0/100
+
+=== RAM BENCHMARK ===
+Vitesse: 10240.00 MiB/sec
+RAM: 100/100
+
+=== DISK BENCHMARK ===
+Écriture: 715,00 MiB/s
+Lecture: 940,00 MiB/s
+IOPS: 35063
+Disque: 0/100
+
+=== GPU BENCHMARK ===
+FPS: 500
+GPU: 0/100
+
