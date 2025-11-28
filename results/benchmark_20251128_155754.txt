@@ -1,0 +1,25 @@
+=== SYSTEM INFO ===
+CPU: Processor Unknown (16 cores / 16 threads)
+RAM: 15Gi (3200 MT/s)
+GPU: Intel Corporation CometLake-S GT2 [UHD Graphics 630] (rev 05)
+Storage: 931,5G
+
+=== CPU BENCHMARK ===
+Single-thread: 595.24 events/sec
+Multi-thread: 5675.41 events/sec
+CPU: 0/100
+
+=== RAM BENCHMARK ===
+Bandwidth: 10240.00 MiB/sec
+RAM: 100/100
+
+=== DISK BENCHMARK ===
+Write: 737,00 MB/s
+Read: 960,00 MB/s
+IOPS: 32585
+Disk: 0/100
+
+=== GPU BENCHMARK ===
+FPS: 500
+GPU: 0/100
+
