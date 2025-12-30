@@ -1,0 +1,55 @@
+{
+    "metadata": {
+        "version": "1.0.0",
+        "timestamp": "2025-12-30T14:49:27Z",
+        "hostname": "pc-victor"
+    },
+    "system": {
+        "cpu": {
+            "model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+            "cores": 1,
+            "threads": 16,
+            "architecture": "x86_64"
+        },
+        "memory": {
+            "total_gb": 15.3355,
+            "type": "Unknown",
+            "speed": "Unknown"
+        },
+        "storage": {
+            "model": "ST1000LM049-2GH172",
+            "size": "931,5G"
+        },
+        "os": {
+            "name": "Unknown",
+            "kernel": "6.14.0-37-generic"
+        }
+    },
+    "results": {
+        "cpu": {
+            "single_thread": 607.2200,
+            "multi_thread": 6010.8100,
+            "compression_kbps": 46868.1138,
+            "crypto_mbps": 0,
+            "scaling_efficiency": 61.8600,
+            "score": 88.3511
+        },
+        "memory": {
+            "bandwidth_mbps": 89492.3133,
+            "score": 596.6154
+        },
+        "storage": {
+            "seq_read_mbps": 971.9280,
+            "seq_write_mbps": 841.8762,
+            "rand_read_iops": 47238,
+            "rand_write_iops": 138922,
+            "mixed_iops": 53668,
+            "score": 205.8125
+        },
+        "final": {
+            "score": 256.5285,
+            "grade": "S",
+            "category": "Exceptional"
+        }
+    }
+}
